@@ -37,13 +37,6 @@
             font-size: 0.85em;
             margin-bottom: 10px;
         }
-        .input-description {
-            color: #718096;
-            font-size: 0.8em;
-            margin-top: -10px;
-            margin-bottom: 15px;
-            text-align: left;
-        }
         .card {
             background-color: #ffffff;
             padding: 15px;
@@ -256,7 +249,6 @@
             <div class="input-group">
                 <label for="uploadSales">Upload Sales Data (CSV)</label>
                 <input type="file" id="uploadSales" accept=".csv">
-                <div class="input-description">Required columns: <code>stock_id</code>, <code>product_name</code>, <code>sales_amount</code>, <code>quantity</code></div>
             </div>
             <button onclick="generateReport()">Generate Report</button>
             <div id="results" class="results-section">
@@ -292,70 +284,31 @@
     </div>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script>
-        function getMean(values) {
-            const valid = values.map(Number).filter(v => !isNaN(v));
-            return valid.length ? valid.reduce((sum, v) => sum + v, 0) / valid.length : 0;
-        }
-
-        function getMode(values) {
-            const frequency = {};
-            let maxFreq = 0;
-            let mode = values[0] || 'Unknown';
-            values.forEach(value => {
-                frequency[value] = (frequency[value] || 0) + 1;
-                if (frequency[value] > maxFreq) {
-                    maxFreq = frequency[value];
-                    mode = value;
-                }
-            });
-            return mode || 'Unknown';
-        }
-
-        function processCSVFile(file, requiredHeaders) {
+        function processCSVFile(file) {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
                 reader.onload = function(e) {
                     const text = e.target.result;
                     const rows = text.split('\n').map(row => row.split(',').map(cell => cell.trim()));
-                    const headers = rows[0].map(h => h.trim());
+                    const headers = rows[0].map(h => h.toLowerCase());
+                    const requiredHeaders = ['stock_id', 'product_name', 'sales_amount', 'quantity'];
                     if (!requiredHeaders.every(h => headers.includes(h))) {
-                        reject(new Error(`CSV must include ${requiredHeaders.join(', ')}. Column names are case-sensitive.`));
+                        reject(new Error('CSV must include stock_id, product_name, sales_amount, and quantity.'));
                         return;
                     }
-
                     const data = rows.slice(1)
-                        .filter(row => row.length >= requiredHeaders.length && row.some(cell => cell))
+                        .filter(row => row.length === headers.length && row.some(cell => cell))
                         .map(row => {
                             const obj = {};
                             headers.forEach((header, idx) => {
-                                if (requiredHeaders.includes(header)) {
-                                    obj[header] = row[idx] || '';
-                                }
+                                obj[header] = row[idx];
                             });
                             return obj;
                         });
-
                     if (data.length > 1000) {
                         reject(new Error('Upload limit exceeded. Maximum 1000 records allowed.'));
                         return;
                     }
-
-                    const stockIds = data.map(row => row.stock_id).filter(Boolean);
-                    const productNames = data.map(row => row.product_name).filter(Boolean);
-                    const salesAmounts = data.map(row => row.sales_amount).filter(Boolean);
-                    const quantities = data.map(row => row.quantity).filter(Boolean);
-                    const defaultStockId = getMode(stockIds);
-                    const defaultProductName = getMode(productNames);
-                    const defaultSalesAmount = getMean(salesAmounts);
-                    const defaultQuantity = getMean(quantities);
-
-                    data.forEach(row => {
-                        row.stock_id = row.stock_id || defaultStockId;
-                        row.product_name = row.product_name || defaultProductName;
-                        row.sales_amount = row.sales_amount && !isNaN(Number(row.sales_amount)) ? Number(row.sales_amount) : defaultSalesAmount;
-                        row.quantity = row.quantity && !isNaN(Number(row.quantity)) ? Number(row.quantity) : defaultQuantity;
-                    });
-
                     resolve(data);
                 };
                 reader.onerror = () => reject(new Error('Error reading file.'));
@@ -378,7 +331,7 @@
             }
 
             try {
-                const salesData = await processCSVFile(salesFile, ['stock_id', 'product_name', 'sales_amount', 'quantity']);
+                const salesData = await processCSVFile(salesFile);
                 const products = {};
 
                 salesData.forEach(sale => {
@@ -389,8 +342,8 @@
                             total_quantity: 0
                         };
                     }
-                    products[sale.stock_id].total_sales += sale.sales_amount;
-                    products[sale.stock_id].total_quantity += sale.quantity;
+                    products[sale.stock_id].total_sales += parseFloat(sale.sales_amount) || 0;
+                    products[sale.stock_id].total_quantity += parseInt(sale.quantity) || 0;
                 });
 
                 let tableHTML = '';
@@ -400,7 +353,7 @@
                             <td>${stockId}</td>
                             <td>${data.product_name}</td>
                             <td>${data.total_sales.toFixed(2)}</td>
-                            <td>${data.total_quantity.toFixed(0)}</td>
+                            <td>${data.total_quantity}</td>
                         </tr>
                     `;
                 }
